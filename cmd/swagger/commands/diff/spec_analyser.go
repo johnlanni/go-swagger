@@ -443,12 +443,15 @@ func (sd *SpecAnalyser) compareDescripton(location DifferenceLocation, desc1, de
 
 }
 
-func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, schema2 *spec.Schema, required1, required2 bool) {
+func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, schema2 *spec.Schema, required1, required2 bool, cycleCheckMapOption ...map[string]bool) {
 
 	if schema1 == nil || schema2 == nil {
 		return
 	}
-
+	cycleCheckMap := map[string]bool{}
+	if len(cycleCheckMapOption) > 0 {
+		cycleCheckMap = cycleCheckMapOption[0]
+	}
 	sd.compareDescripton(location, schema1.Description, schema2.Description)
 
 	if len(schema1.Type) == 0 {
@@ -456,6 +459,10 @@ func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, sche
 		refSchema2, definition2 := sd.schemaFromRef(schema2, &sd.Definitions2)
 
 		if len(definition1) > 0 {
+			if _, ok := cycleCheckMap[definition1]; ok {
+				return
+			}
+			cycleCheckMap[definition1] = true
 			info := fmt.Sprintf("[%s -> %s]", definition1, definition2)
 
 			if definition1 != definition2 {
@@ -464,7 +471,7 @@ func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, sche
 					DiffInfo: info,
 				})
 			}
-			sd.compareSchema(location, refSchema1, refSchema2, required1, required2)
+			sd.compareSchema(location, refSchema1, refSchema2, required1, required2, cycleCheckMap)
 			return
 		}
 	} else {
@@ -473,8 +480,12 @@ func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, sche
 			refSchema2, _ := sd.schemaFromRef(schema2.Items.Schema, &sd.Definitions2)
 
 			if len(definition1) > 0 {
+				if _, ok := cycleCheckMap[definition1]; ok {
+					return
+				}
+				cycleCheckMap[definition1] = true
 				childLocation := location.AddNode(getSchemaDiffNode("", schema1))
-				sd.compareSchema(childLocation, refSchema1, refSchema2, required1, required2)
+				sd.compareSchema(childLocation, refSchema1, refSchema2, required1, required2, cycleCheckMap)
 				return
 			}
 
@@ -508,7 +519,7 @@ func (sd *SpecAnalyser) compareSchema(location DifferenceLocation, schema1, sche
 		childLoc := sd.addChildDiffNode(location, eachProp1Name, &eachProp1)
 
 		if eachProp2, ok := schema2Props[eachProp1Name]; ok {
-			sd.compareSchema(childLoc, &eachProp1, &eachProp2, required1, required2)
+			sd.compareSchema(childLoc, &eachProp1, &eachProp2, required1, required2, cycleCheckMap)
 			sd.compareDescripton(childLoc, eachProp1.Description, eachProp2.Description)
 		} else {
 			sd.Diffs = sd.Diffs.addDiff(SpecDifference{DifferenceLocation: childLoc, Code: DeletedProperty})
